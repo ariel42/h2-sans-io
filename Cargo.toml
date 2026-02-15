@@ -12,15 +12,9 @@ categories = ["network-programming", "web-programming", "parser-implementations"
 [dependencies]
 fluke-hpack = "0.3"
 
-[dev-dependencies]
-
 [lib]
 name = "h2_sans_io"
 path = "src/lib.rs"
-
-[[test]]
-name = "h2_sans_io"
-path = "tests/lib.rs"
 
 [profile.release]
 opt-level = "z"

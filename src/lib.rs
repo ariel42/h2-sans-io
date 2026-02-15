@@ -66,11 +66,3 @@ pub use h2_codec::{
 };
 
 pub use hpack::{H2Header, HpackDecoder, HpackEncoder};
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
