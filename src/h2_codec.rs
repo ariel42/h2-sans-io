@@ -490,6 +490,17 @@ impl H2Codec {
         self.pending_header_block.clear();
     }
 
+    /// Set preface_received flag (for testing)
+    /// This is useful in tests to simulate a connection where the preface has already been received.
+    pub fn set_preface_received(&mut self, value: bool) {
+        self.preface_received = value;
+    }
+
+    /// Get preface_received flag (for testing)
+    pub fn preface_received(&self) -> bool {
+        self.preface_received
+    }
+
     /// Create a RST_STREAM frame with HTTP_1_1_REQUIRED error
     pub fn create_rst_stream(stream_id: u32, error_code: u32) -> Vec<u8> {
         let mut frame = Vec::with_capacity(13);

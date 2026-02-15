@@ -19,3 +19,11 @@ path = "src/lib.rs"
 [profile.release]
 opt-level = "z"
 lto = true
+
+[[test]]
+name = "h2_codec"
+path = "tests/h2_codec/mod.rs"
+
+[[test]]
+name = "hpack"
+path = "tests/hpack/mod.rs"

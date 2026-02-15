@@ -22,6 +22,7 @@
 //! let mut codec = H2Codec::new();
 //!
 //! // Feed raw bytes and get parsed events
+//! let frame_bytes = [0, 0, 5, 0, 1, 0, 0, 0, 1, b'h', b'e', b'l', b'l', b'o'];
 //! let events = codec.process(&frame_bytes).unwrap();
 //!
 //! for event in events {
