@@ -1,0 +1,27 @@
+[package]
+name = "h2-sans-io"
+version = "0.1.0"
+edition = "2021"
+description = "A minimal, sans-I/O HTTP/2 frame codec for WASM and async-free environments"
+license = "MIT"
+repository = "https://github.com/ariel42/h2-sans-io"
+readme = "README.md"
+keywords = ["http2", "http", "wasm", "sans-io", "protocol"]
+categories = ["network-programming", "web-programming", "parser-implementations"]
+
+[dependencies]
+fluke-hpack = "0.3"
+
+[dev-dependencies]
+
+[lib]
+name = "h2_sans_io"
+path = "src/lib.rs"
+
+[[test]]
+name = "h2_sans_io"
+path = "tests/lib.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
