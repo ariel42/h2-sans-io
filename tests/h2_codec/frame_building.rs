@@ -29,8 +29,12 @@ fn test_create_settings_empty() {
 #[test]
 fn test_create_settings_with_window() {
     let frame = H2Codec::create_settings_with_window(1_048_576);
-    assert_eq!(frame.len(), 15);
-    assert_eq!(&frame[9..11], &[0, 4]);
+    // 9-byte header + 12-byte body (2 settings: INITIAL_WINDOW_SIZE + ENABLE_CONNECT_PROTOCOL)
+    assert_eq!(frame.len(), 21);
+    assert_eq!(&frame[0..3], &[0, 0, 12]); // length = 12
+    assert_eq!(&frame[9..11], &[0, 4]); // INITIAL_WINDOW_SIZE
+    assert_eq!(&frame[15..17], &[0, 8]); // ENABLE_CONNECT_PROTOCOL
+    assert_eq!(&frame[17..21], &[0, 0, 0, 1]); // value = 1
 }
 
 #[test]

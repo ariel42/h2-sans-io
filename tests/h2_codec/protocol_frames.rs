@@ -228,3 +228,48 @@ fn test_rst_stream_too_short_returns_error() {
     let result = codec.process(&frame);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_settings_enable_connect_protocol_constant() {
+    assert_eq!(settings_id::ENABLE_CONNECT_PROTOCOL, 0x8);
+}
+
+#[test]
+fn test_settings_with_window_includes_enable_connect_protocol() {
+    // create_settings_with_window must include ENABLE_CONNECT_PROTOCOL for RFC 8441
+    let frame = H2Codec::create_settings_with_window(65535);
+    assert_eq!(frame.len(), 21); // 9 header + 12 body (2 settings)
+    assert_eq!(&frame[0..3], &[0, 0, 12]); // length = 12
+    // Setting 1: INITIAL_WINDOW_SIZE (0x4) = 65535
+    assert_eq!(&frame[9..11], &[0, settings_id::INITIAL_WINDOW_SIZE as u8]);
+    assert_eq!(&frame[11..15], &[0, 0, 0xFF, 0xFF]);
+    // Setting 2: ENABLE_CONNECT_PROTOCOL (0x8) = 1
+    assert_eq!(&frame[15..17], &[0, settings_id::ENABLE_CONNECT_PROTOCOL as u8]);
+    assert_eq!(&frame[17..21], &[0, 0, 0, 1]);
+}
+
+#[test]
+fn test_settings_enable_connect_protocol_parsed() {
+    // Verify the codec parses ENABLE_CONNECT_PROTOCOL without error
+    let mut codec = H2Codec::new();
+    with_preface(&mut codec);
+    // SETTINGS frame with ENABLE_CONNECT_PROTOCOL = 1
+    let frame = vec![
+        0, 0, 6,  // length = 6 (one setting)
+        4,        // type = SETTINGS
+        0,        // flags
+        0, 0, 0, 0, // stream 0
+        0, 8,     // id = ENABLE_CONNECT_PROTOCOL
+        0, 0, 0, 1, // value = 1
+    ];
+    let events = codec.process(&frame).unwrap();
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        H2Event::Settings { ack, settings } => {
+            assert!(!*ack);
+            // The setting should be in the parsed list
+            assert!(settings.iter().any(|(id, val)| *id == 8 && *val == 1));
+        }
+        _ => panic!("Expected Settings event"),
+    }
+}

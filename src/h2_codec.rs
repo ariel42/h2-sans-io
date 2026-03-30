@@ -45,6 +45,7 @@ pub mod settings_id {
     pub const INITIAL_WINDOW_SIZE: u16 = 0x4;
     pub const MAX_FRAME_SIZE: u16 = 0x5;
     pub const MAX_HEADER_LIST_SIZE: u16 = 0x6;
+    pub const ENABLE_CONNECT_PROTOCOL: u16 = 0x8;
 }
 
 /// HTTP/2 error codes (RFC 7540 Section 7)
@@ -563,15 +564,14 @@ impl H2Codec {
         ]
     }
 
-    /// Create a SETTINGS frame with larger initial window size
-    /// This allows upstream to send more data before waiting for WINDOW_UPDATE
-    /// Critical for multiplexing - default 65535 bytes is too small for concurrent streams
+    /// Create a SETTINGS frame with larger initial window size and RFC 8441 extended CONNECT.
+    /// - INITIAL_WINDOW_SIZE: allows peer to send more data before WINDOW_UPDATE
+    /// - ENABLE_CONNECT_PROTOCOL: lets browsers use H2 WebSocket (extended CONNECT with :protocol)
     #[allow(dead_code)]
     pub fn create_settings_with_window(initial_window_size: u32) -> Vec<u8> {
-        // SETTINGS frame with SETTINGS_INITIAL_WINDOW_SIZE (0x4)
-        // Each setting is 6 bytes: 2 byte ID + 4 byte value
+        // SETTINGS frame with two settings (6 bytes each = 12 bytes total)
         let mut frame = vec![
-            0, 0, 6,  // Length: 6 bytes (one setting)
+            0, 0, 12, // Length: 12 bytes (two settings)
             frame_type::SETTINGS,
             0x0,      // Flags: 0 (not ACK)
             0, 0, 0, 0,  // Stream ID: 0
@@ -579,11 +579,17 @@ impl H2Codec {
         // SETTINGS_INITIAL_WINDOW_SIZE = 0x4
         frame.push(0);
         frame.push(4);
-        // Window size value (4 bytes, big-endian)
         frame.push((initial_window_size >> 24) as u8);
         frame.push((initial_window_size >> 16) as u8);
         frame.push((initial_window_size >> 8) as u8);
         frame.push(initial_window_size as u8);
+        // SETTINGS_ENABLE_CONNECT_PROTOCOL = 0x8, value = 1 (RFC 8441)
+        frame.push(0);
+        frame.push(8);
+        frame.push(0);
+        frame.push(0);
+        frame.push(0);
+        frame.push(1);
         frame
     }
 
