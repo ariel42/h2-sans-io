@@ -32,7 +32,7 @@ The Rust ecosystem has excellent HTTP/2 libraries ([hyperium/h2](https://github.
 - **CONTINUATION Assembly**: Automatic header block reassembly across HEADERS + CONTINUATION frames, with a configurable size limit (256 KB) and CONTINUATION interlock enforcement per RFC 7540 §6.10.
 - **Connection Preface**: Automatic h2c (cleartext HTTP/2) preface detection.
 - **Buffer Protection**: Bounded internal buffer (1 MB) prevents memory exhaustion from slow or malicious senders. Size checks run before copying data.
-- **207 Unit Tests**: Comprehensive test suite covering RFC compliance, edge cases, error recovery, binary HPACK headers, and dynamic table state.
+- **236 Unit Tests**: Comprehensive test suite covering RFC compliance, edge cases, error recovery, binary HPACK headers, dynamic table state, and frame builder roundtrips.
 
 ## Quick Start
 
@@ -99,6 +99,15 @@ let goaway = H2Codec::create_goaway(last_stream_id, 0x0); // NO_ERROR
 
 // CONTINUATION (split large header blocks)
 let cont = H2Codec::create_continuation_frame(stream_id, &header_block_fragment, true);
+
+// HEADERS frame (single frame, sets END_HEADERS)
+let headers = H2Codec::create_headers_frame(stream_id, &hpack_block, end_stream);
+
+// HEADERS + CONTINUATION frames (auto-splits if block > max_frame_size)
+let frames = H2Codec::create_headers_frames(stream_id, &hpack_block, end_stream, 16384);
+
+// DATA frames (auto-splits if data > max_frame_size, END_STREAM on last)
+let frames = H2Codec::create_data_frames(stream_id, &body, true, 16384);
 ```
 
 ## HPACK (Header Compression)
