@@ -32,7 +32,7 @@ The Rust ecosystem has excellent HTTP/2 libraries ([hyperium/h2](https://github.
 - **CONTINUATION Assembly**: Automatic header block reassembly across HEADERS + CONTINUATION frames, with a configurable size limit (256 KB) and CONTINUATION interlock enforcement per RFC 7540 §6.10.
 - **Connection Preface**: Automatic h2c (cleartext HTTP/2) preface detection.
 - **Buffer Protection**: Bounded internal buffer (1 MB) prevents memory exhaustion from slow or malicious senders. Size checks run before copying data.
-- **236 Unit Tests**: Comprehensive test suite covering RFC compliance, edge cases, error recovery, binary HPACK headers, dynamic table state, and frame builder roundtrips.
+- **302 Unit Tests**: Comprehensive test suite covering RFC compliance, edge cases, error recovery, binary HPACK headers, dynamic table state, frame builder roundtrips, padding boundaries, CONTINUATION assembly, and full connection lifecycle simulations.
 
 ## Quick Start
 
