@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-03-31
+
+### Added
+
+- `H2Codec::stream_count()` accessor to monitor the number of tracked streams in the
+  internal `HashMap`. Useful for detecting memory growth when callers forget to call
+  `remove_stream()` after a stream completes.
+- 66 new unit tests (302 total) across 7 new test files:
+  - `frame_builder_validation.rs` — assert guards for `create_headers_frame`,
+    `create_headers_frames`, `create_data_frames`, and `create_continuation_frame`.
+  - `memory_and_lifecycle.rs` — `stream_count()` growth, shrink on remove/RST, reset,
+    50-stream stress test.
+  - `padding_exhaustive.rs` — DATA/HEADERS padding boundary conditions, max pad_length,
+    combined PADDED+PRIORITY edge cases.
+  - `continuation_advanced.rs` — 10-frame CONTINUATION chains, empty payload, error
+    state cleanup, sequential header blocks on different streams.
+  - `preface_edge_cases.rs` — multi-fragment preface delivery, byte-at-a-time preface,
+    non-preface data handling, `set_preface_received` interactions.
+  - `roundtrip_comprehensive.rs` — full connection lifecycle, concurrent streams,
+    GOAWAY/PING mid-stream, 50 KB multi-frame DATA roundtrip.
+  - `hpack/edge_cases.rs` — 100-header encode/decode, 4 KB header names, 16 KB values,
+    15-cycle dynamic table stress, decoder error recovery, `Default` trait equivalence.
+
+### Fixed
+
+- **Silent 24-bit length truncation in `create_headers_frame`.** If `header_block.len()`
+  exceeded 2²⁴−1 (16,777,215 bytes), the 24-bit length field in the frame header would
+  silently wrap, producing a malformed frame that desynchronizes the parser on the other
+  side. Now panics with a descriptive message, consistent with `create_continuation_frame`.
+- **Silent 24-bit overflow in `create_headers_frames`.** If `max_frame_size` exceeded
+  `MAX_FRAME_PAYLOAD_LENGTH`, individual HEADERS/CONTINUATION chunks could overflow the
+  24-bit length field. Now asserts `max_frame_size <= MAX_FRAME_PAYLOAD_LENGTH`.
+- **Silent 24-bit overflow in `create_data_frames`.** Same class of bug as above. Now
+  asserts `max_frame_size <= MAX_FRAME_PAYLOAD_LENGTH`.
+- **4 Clippy warnings:** collapsed nested `if` in preface detection, replaced manual
+  modulo check with `.is_multiple_of(6)`, removed two redundant `&data[..]` slicings.
+
 ## [0.9.1] - 2026-03-31
 
 ### Added

@@ -234,11 +234,11 @@ impl H2Codec {
         let mut events = Vec::new();
 
         // Check for connection preface (client sends this first)
-        if !self.preface_received && self.buffer.len() >= CONNECTION_PREFACE.len() {
-            if &self.buffer[..CONNECTION_PREFACE.len()] == CONNECTION_PREFACE {
+        if !self.preface_received && self.buffer.len() >= CONNECTION_PREFACE.len()
+            && &self.buffer[..CONNECTION_PREFACE.len()] == CONNECTION_PREFACE
+        {
                 self.buffer.drain(..CONNECTION_PREFACE.len());
                 self.preface_received = true;
-            }
         }
 
         // Parse frames using offset tracking to avoid per-frame allocation.
@@ -426,7 +426,7 @@ impl H2Codec {
                     return Ok(Some(H2Event::Settings { ack: true, settings: Vec::new() }));
                 }
                 // RFC 7540 Section 6.5: Payload must be a multiple of 6 bytes.
-                if payload.len() % 6 != 0 {
+                if !payload.len().is_multiple_of(6) {
                     return Err(format!(
                         "SETTINGS frame size error: payload length {} is not a multiple of 6",
                         payload.len()
@@ -581,6 +581,16 @@ impl H2Codec {
     /// Remove a stream (e.g., after completing a flow)
     pub fn remove_stream(&mut self, stream_id: u32) {
         self.streams.remove(&stream_id);
+    }
+
+    /// Return the number of tracked streams.
+    ///
+    /// This is useful for monitoring memory usage: the codec stores a small
+    /// `StreamState` entry per active stream ID. Callers are responsible for
+    /// calling `remove_stream()` once a stream is fully done; otherwise the
+    /// map grows without bound over the life of a connection.
+    pub fn stream_count(&self) -> usize {
+        self.streams.len()
     }
 
     /// Reset codec state (e.g., after upstream reconnect)
@@ -773,7 +783,15 @@ impl H2Codec {
     ///
     /// Sets END_HEADERS. Does NOT handle splitting across CONTINUATION frames —
     /// use `create_headers_frames` for that.
+    ///
+    /// # Panics
+    /// Panics if `header_block` length exceeds the maximum 24-bit frame length (16,777,215).
     pub fn create_headers_frame(stream_id: u32, header_block: &[u8], end_stream: bool) -> Vec<u8> {
+        assert!(
+            header_block.len() <= MAX_FRAME_PAYLOAD_LENGTH as usize,
+            "Header block length {} exceeds maximum frame payload length {}",
+            header_block.len(), MAX_FRAME_PAYLOAD_LENGTH
+        );
         let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
         let length = header_block.len();
         let mut flags_byte = flags::END_HEADERS;
@@ -794,14 +812,22 @@ impl H2Codec {
 
     /// Create HEADERS frame(s) from a pre-encoded HPACK header block,
     /// splitting into HEADERS + CONTINUATION frames if the block exceeds `max_frame_size`.
+    ///
+    /// # Panics
+    /// Panics if `max_frame_size` exceeds the maximum 24-bit frame length (16,777,215).
     pub fn create_headers_frames(stream_id: u32, header_block: &[u8], end_stream: bool, max_frame_size: u32) -> Vec<Vec<u8>> {
+        assert!(
+            max_frame_size <= MAX_FRAME_PAYLOAD_LENGTH,
+            "max_frame_size {} exceeds maximum frame payload length {}",
+            max_frame_size, MAX_FRAME_PAYLOAD_LENGTH
+        );
         let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
         if header_block.len() <= max_frame_size as usize {
             return vec![Self::create_headers_frame(stream_id, header_block, end_stream)];
         }
 
         let mut frames = Vec::new();
-        let mut remaining = &header_block[..];
+        let mut remaining = header_block;
         let mut is_first = true;
 
         while !remaining.is_empty() {
@@ -837,7 +863,15 @@ impl H2Codec {
 
     /// Create DATA frame(s), splitting into multiple frames if `data` exceeds `max_frame_size`.
     /// END_STREAM is set only on the last frame (when `end_stream` is true).
+    ///
+    /// # Panics
+    /// Panics if `max_frame_size` exceeds the maximum 24-bit frame length (16,777,215).
     pub fn create_data_frames(stream_id: u32, data: &[u8], end_stream: bool, max_frame_size: u32) -> Vec<Vec<u8>> {
+        assert!(
+            max_frame_size <= MAX_FRAME_PAYLOAD_LENGTH,
+            "max_frame_size {} exceeds maximum frame payload length {}",
+            max_frame_size, MAX_FRAME_PAYLOAD_LENGTH
+        );
         let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
         if data.len() <= max_frame_size as usize {
             let length = data.len() as u32;
@@ -855,7 +889,7 @@ impl H2Codec {
         }
 
         let mut frames = Vec::new();
-        let mut remaining = &data[..];
+        let mut remaining = data;
 
         while !remaining.is_empty() {
             let chunk_size = remaining.len().min(max_frame_size as usize);
