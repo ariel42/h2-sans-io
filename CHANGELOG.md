@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-03-31
+
+### Added
+
+- `H2Codec::create_headers_frame()` for building a single HEADERS frame from a pre-encoded
+  HPACK header block. Sets END_HEADERS automatically.
+- `H2Codec::create_headers_frames()` for building HEADERS + CONTINUATION frames with
+  automatic splitting when the header block exceeds `max_frame_size`.
+- `H2Codec::create_data_frames()` for building DATA frames with automatic splitting when
+  data exceeds `max_frame_size`. END_STREAM is set only on the last frame.
+- 30 new tests for the frame building functions covering flags, length encoding, stream ID
+  encoding, reserved bit masking, payload integrity across splits, exact boundary cases,
+  empty payloads, and codec roundtrips.
+
+### Fixed
+
+- **Reserved bit not masked in new frame builders.** `create_headers_frame`,
+  `create_headers_frames`, and `create_data_frames` now mask the reserved bit on
+  `stream_id` (`& 0x7FFFFFFF`), consistent with all other frame builders in the crate.
+
 ## [0.9.0] - 2026-03-31
 
 ### Added

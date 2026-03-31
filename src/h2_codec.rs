@@ -768,4 +768,114 @@ impl H2Codec {
         frame.extend_from_slice(payload);
         frame
     }
+
+    /// Create a single HEADERS frame from a pre-encoded HPACK header block.
+    ///
+    /// Sets END_HEADERS. Does NOT handle splitting across CONTINUATION frames —
+    /// use `create_headers_frames` for that.
+    pub fn create_headers_frame(stream_id: u32, header_block: &[u8], end_stream: bool) -> Vec<u8> {
+        let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
+        let length = header_block.len();
+        let mut flags_byte = flags::END_HEADERS;
+        if end_stream {
+            flags_byte |= flags::END_STREAM;
+        }
+
+        let mut frame = Vec::with_capacity(9 + length);
+        frame.push((length >> 16) as u8);
+        frame.push((length >> 8) as u8);
+        frame.push(length as u8);
+        frame.push(frame_type::HEADERS);
+        frame.push(flags_byte);
+        frame.extend_from_slice(&stream_id.to_be_bytes());
+        frame.extend_from_slice(header_block);
+        frame
+    }
+
+    /// Create HEADERS frame(s) from a pre-encoded HPACK header block,
+    /// splitting into HEADERS + CONTINUATION frames if the block exceeds `max_frame_size`.
+    pub fn create_headers_frames(stream_id: u32, header_block: &[u8], end_stream: bool, max_frame_size: u32) -> Vec<Vec<u8>> {
+        let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
+        if header_block.len() <= max_frame_size as usize {
+            return vec![Self::create_headers_frame(stream_id, header_block, end_stream)];
+        }
+
+        let mut frames = Vec::new();
+        let mut remaining = &header_block[..];
+        let mut is_first = true;
+
+        while !remaining.is_empty() {
+            let chunk_size = remaining.len().min(max_frame_size as usize);
+            let chunk = &remaining[..chunk_size];
+            remaining = &remaining[chunk_size..];
+
+            if is_first {
+                // HEADERS without END_HEADERS
+                let mut flags_byte = 0x0;
+                if end_stream {
+                    flags_byte |= flags::END_STREAM;
+                }
+
+                let mut frame = Vec::with_capacity(9 + chunk.len());
+                frame.push((chunk_size >> 16) as u8);
+                frame.push((chunk_size >> 8) as u8);
+                frame.push(chunk_size as u8);
+                frame.push(frame_type::HEADERS);
+                frame.push(flags_byte);
+                frame.extend_from_slice(&stream_id.to_be_bytes());
+                frame.extend_from_slice(chunk);
+                frames.push(frame);
+                is_first = false;
+            } else {
+                let is_last = remaining.is_empty();
+                frames.push(Self::create_continuation_frame(stream_id, chunk, is_last));
+            }
+        }
+
+        frames
+    }
+
+    /// Create DATA frame(s), splitting into multiple frames if `data` exceeds `max_frame_size`.
+    /// END_STREAM is set only on the last frame (when `end_stream` is true).
+    pub fn create_data_frames(stream_id: u32, data: &[u8], end_stream: bool, max_frame_size: u32) -> Vec<Vec<u8>> {
+        let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
+        if data.len() <= max_frame_size as usize {
+            let length = data.len() as u32;
+            let flags_byte = if end_stream { flags::END_STREAM } else { 0 };
+
+            let mut frame = Vec::with_capacity(9 + data.len());
+            frame.push((length >> 16) as u8);
+            frame.push((length >> 8) as u8);
+            frame.push(length as u8);
+            frame.push(frame_type::DATA);
+            frame.push(flags_byte);
+            frame.extend_from_slice(&stream_id.to_be_bytes());
+            frame.extend_from_slice(data);
+            return vec![frame];
+        }
+
+        let mut frames = Vec::new();
+        let mut remaining = &data[..];
+
+        while !remaining.is_empty() {
+            let chunk_size = remaining.len().min(max_frame_size as usize);
+            let chunk = &remaining[..chunk_size];
+            remaining = &remaining[chunk_size..];
+
+            let is_last = remaining.is_empty();
+            let flags_byte = if is_last && end_stream { flags::END_STREAM } else { 0 };
+
+            let mut frame = Vec::with_capacity(9 + chunk.len());
+            frame.push((chunk_size >> 16) as u8);
+            frame.push((chunk_size >> 8) as u8);
+            frame.push(chunk_size as u8);
+            frame.push(frame_type::DATA);
+            frame.push(flags_byte);
+            frame.extend_from_slice(&stream_id.to_be_bytes());
+            frame.extend_from_slice(chunk);
+            frames.push(frame);
+        }
+
+        frames
+    }
 }
