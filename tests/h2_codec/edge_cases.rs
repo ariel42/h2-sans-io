@@ -83,10 +83,10 @@ fn test_multiple_frames_single_call() {
 fn test_buffer_limit_exceeded() {
     let mut c = codec();
     // Feed data exceeding MAX_BUFFER_SIZE without completing a frame
-    let big_chunk = vec![0u8; MAX_BUFFER_SIZE + 1];
+    let big_chunk = vec![0xAAu8; MAX_BUFFER_SIZE + 1];
     let result = c.process(&big_chunk);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Buffer size"));
+    assert!(result.unwrap_err().contains("would exceed"));
 }
 
 #[test]

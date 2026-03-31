@@ -67,8 +67,11 @@ pub mod error_code {
     pub const HTTP_1_1_REQUIRED: u32 = 0xd;
 }
 
+/// Maximum length value encodable in the 24-bit frame length field.
+pub const MAX_FRAME_PAYLOAD_LENGTH: u32 = 0xFFFFFF; // 16,777,215
+
 /// A parsed HTTP/2 frame header (9 bytes)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct H2FrameHeader {
     pub length: u32,      // 24 bits
     pub frame_type: u8,
@@ -117,7 +120,7 @@ impl H2FrameHeader {
 }
 
 /// Events emitted by the H2 codec when parsing frames
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum H2Event {
     /// New stream with HEADERS (request on client side, response on server side)
     Headers {
@@ -217,15 +220,16 @@ impl H2Codec {
     ///
     /// This is the main entry point - feed raw bytes and get back events.
     pub fn process(&mut self, data: &[u8]) -> Result<Vec<H2Event>, String> {
-        self.buffer.extend_from_slice(data);
-
-        // Guard against unbounded buffer growth (e.g., peer sends partial frames forever)
-        if self.buffer.len() > MAX_BUFFER_SIZE {
+        // Guard against unbounded buffer growth BEFORE copying data in.
+        // Check prospective size to avoid transient memory spike.
+        let prospective_size = self.buffer.len() + data.len();
+        if prospective_size > MAX_BUFFER_SIZE {
             return Err(format!(
-                "Buffer size {} exceeds maximum {}",
-                self.buffer.len(), MAX_BUFFER_SIZE
+                "Buffer size {} would exceed maximum {}",
+                prospective_size, MAX_BUFFER_SIZE
             ));
         }
+        self.buffer.extend_from_slice(data);
 
         let mut events = Vec::new();
 
@@ -237,7 +241,9 @@ impl H2Codec {
             }
         }
 
-        // Parse frames using offset tracking to avoid per-frame allocation
+        // Parse frames using offset tracking to avoid per-frame allocation.
+        // On error, we drain consumed bytes first so already-parsed frames
+        // are not re-processed on the next call (prevents duplicate events).
         let mut offset = 0;
         loop {
             let remaining = &self.buffer[offset..];
@@ -262,9 +268,17 @@ impl H2Codec {
             let payload = remaining[9..total_size].to_vec();
             offset += total_size;
 
-            // Parse the frame
-            if let Some(event) = self.parse_frame(&header, payload)? {
-                events.push(event);
+            // Parse the frame. On error, drain consumed bytes first to avoid
+            // re-processing already-parsed frames on the next process() call.
+            match self.parse_frame(&header, payload) {
+                Ok(Some(event)) => events.push(event),
+                Ok(None) => {}
+                Err(e) => {
+                    if offset > 0 {
+                        self.buffer.drain(..offset);
+                    }
+                    return Err(e);
+                }
             }
         }
 
@@ -486,7 +500,18 @@ impl H2Codec {
                 Ok(Some(H2Event::Ping { ack, data }))
             }
             frame_type::PRIORITY => {
-                // Ignore PRIORITY frames
+                // RFC 7540 Section 6.3: PRIORITY on stream 0 is PROTOCOL_ERROR.
+                if header.stream_id == 0 {
+                    return Err("PRIORITY frame on stream 0".to_string());
+                }
+                // RFC 7540 Section 6.3: PRIORITY must have exactly 5 bytes.
+                if payload.len() != 5 {
+                    return Err(format!(
+                        "PRIORITY frame size error: expected 5 bytes, got {}",
+                        payload.len()
+                    ));
+                }
+                // Ignore PRIORITY frames (no event emitted)
                 Ok(None)
             }
             frame_type::PUSH_PROMISE => {
@@ -501,15 +526,14 @@ impl H2Codec {
     }
 
     /// Extract DATA payload, handling PADDED flag.
-    /// Takes ownership of the payload Vec to avoid re-copying.
     fn extract_data_payload(&self, header: &H2FrameHeader, payload: Vec<u8>) -> Result<Vec<u8>, String> {
         if header.flags & flags::PADDED != 0 {
             if payload.is_empty() {
                 return Err("PADDED DATA frame with no payload".to_string());
             }
             let pad_length = payload[0] as usize;
-            // RFC 7540 Section 6.1: pad length + data must fit in the payload
-            // payload[0] is pad_length byte, then data, then pad_length bytes of padding
+            // RFC 7540 Section 6.1: padding length must be less than the
+            // frame payload length (pad_length byte + data + padding must fit).
             if 1 + pad_length > payload.len() {
                 return Err("Invalid padding length in DATA frame".to_string());
             }
@@ -521,7 +545,6 @@ impl H2Codec {
     }
 
     /// Extract HEADERS payload, handling PADDED and PRIORITY flags.
-    /// Takes ownership of the payload Vec to avoid re-copying.
     fn extract_headers_payload(&self, header: &H2FrameHeader, payload: Vec<u8>) -> Result<Vec<u8>, String> {
         let mut offset = 0;
         let mut end = payload.len();
@@ -547,7 +570,11 @@ impl H2Codec {
             offset += 5; // Skip stream dependency (4 bytes) + weight (1 byte)
         }
 
-        // Return the relevant subrange
+        // Avoid unnecessary copy when no stripping is needed
+        if offset == 0 && end == payload.len() {
+            return Ok(payload);
+        }
+
         Ok(payload[offset..end].to_vec())
     }
 
@@ -683,11 +710,16 @@ impl H2Codec {
         frame
     }
 
-    /// Create a WINDOW_UPDATE frame to replenish flow control window
-    /// stream_id=0 updates connection-level window, otherwise stream-level
+    /// Create a WINDOW_UPDATE frame to replenish flow control window.
+    /// stream_id=0 updates connection-level window, otherwise stream-level.
+    ///
+    /// # Panics
+    /// Panics if `increment` is 0 (after masking the reserved bit), because
+    /// RFC 7540 §6.9 requires a non-zero window size increment.
     pub fn create_window_update(stream_id: u32, increment: u32) -> Vec<u8> {
         let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
         let increment = increment & 0x7FFFFFFF; // Clear reserved bit
+        assert!(increment != 0, "WINDOW_UPDATE increment must be non-zero (RFC 7540 §6.9)");
         vec![
             0, 0, 4,  // Length: 4 bytes
             frame_type::WINDOW_UPDATE,
@@ -703,9 +735,17 @@ impl H2Codec {
         ]
     }
 
-    /// Create a CONTINUATION frame to continue a header block
-    /// end_headers: true if this is the final frame in the header block sequence
+    /// Create a CONTINUATION frame to continue a header block.
+    /// end_headers: true if this is the final frame in the header block sequence.
+    ///
+    /// # Panics
+    /// Panics if `payload` length exceeds the maximum 24-bit frame length (16,777,215).
     pub fn create_continuation_frame(stream_id: u32, payload: &[u8], end_headers: bool) -> Vec<u8> {
+        assert!(
+            payload.len() <= MAX_FRAME_PAYLOAD_LENGTH as usize,
+            "Payload length {} exceeds maximum frame payload length {}",
+            payload.len(), MAX_FRAME_PAYLOAD_LENGTH
+        );
         let stream_id = stream_id & 0x7FFFFFFF; // Clear reserved bit
         let length = payload.len() as u32;
         let mut flags_byte = 0x0;

@@ -22,7 +22,7 @@ fn test_encode_literal_header() {
     let headers = vec![H2Header::new("x-custom", "value")];
     let encoded = encoder.encode(&headers);
     let decoded = decoder.decode(&encoded).unwrap();
-    assert_eq!(decoded[0].name, "x-custom");
+    assert_eq!(decoded[0].name, b"x-custom");
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn test_encode_indexed_header() {
     let headers = vec![H2Header::new(":method", "GET")];
     let encoded = encoder.encode(&headers);
     let decoded = decoder.decode(&encoded).unwrap();
-    assert_eq!(decoded[0].value, "GET");
+    assert_eq!(decoded[0].value, b"GET");
 }
 
 #[test]
@@ -64,8 +64,8 @@ fn test_decoder_new() {
 #[test]
 fn test_h2header_new() {
     let header = H2Header::new("content-type", "text/html");
-    assert_eq!(header.name, "content-type");
-    assert_eq!(header.value, "text/html");
+    assert_eq!(header.name, b"content-type");
+    assert_eq!(header.value, b"text/html");
 }
 
 #[test]

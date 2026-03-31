@@ -62,6 +62,7 @@ pub mod hpack;
 pub use h2_codec::{
     H2Codec, H2Event, H2FrameHeader, StreamState,
     CONNECTION_PREFACE, MAX_HEADER_BLOCK_SIZE, MAX_BUFFER_SIZE,
+    MAX_FRAME_PAYLOAD_LENGTH,
     error_code, flags, frame_type, settings_id,
     is_h2c_preface,
 };
