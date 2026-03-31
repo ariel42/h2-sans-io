@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `H2Header::new()` now accepts `impl Into<Vec<u8>>` instead of `impl Into<String>`.
   All existing `&str` call sites continue to compile without changes.
 
-## [0.1.1] - 2025-01-01
+## [0.1.1] - 2026-03-30
 
 ### Added
 
@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_settings_with_window()` builder includes ENABLE_CONNECT_PROTOCOL setting.
 - Comprehensive test suite for HTTP/2 codec and HPACK (76 tests).
 
-## [0.1.0] - 2025-01-01
+## [0.1.0] - 2026-02-15
 
 ### Added
 
